@@ -1,6 +1,6 @@
 // api/whitelist.js
 export default async function handler(req, res) {
-  // 1) CORS support
+  // === CORS ===
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -9,38 +9,43 @@ export default async function handler(req, res) {
   }
 
   const SHEET_URL = process.env.SHEET_URL;
-
-  // 2) GET → fetch progress data
+  // === GET: proxy for progress data ===
   if (req.method === "GET") {
     try {
       const sheetRes = await fetch(SHEET_URL);
       const data = await sheetRes.json();
       return res.status(200).json(data);
     } catch (e) {
-      return res.status(500).json({ error: "Unable to fetch progress" });
+      return res.status(500).json({ message: "Unable to fetch progress" });
     }
   }
 
-  // 3) POST → submit to the whitelist
+  // === POST: handle submission ===
   if (req.method === "POST") {
-    const { address, twitter } = req.body;
-    if (!address || !twitter) {
-      return res.status(400).json({ error: "Missing address or Twitter" });
+    const { wallet, username, timestamp } = req.body;
+    if (!wallet || !username) {
+      return res.status(400).json({ message: "Wallet and Username are required" });
     }
     try {
+      // Forward exactly what frontend sent to your Sheet
       const resp = await fetch(SHEET_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, twitter }),
+        body: JSON.stringify({ wallet, username, timestamp }),
       });
-      if (!resp.ok) throw new Error("sheet.best failed");
-      return res.status(200).json({ success: true });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(errText || resp.statusText);
+      }
+      return res.status(200).json({ message: "Submitted successfully" });
     } catch (e) {
-      return res.status(500).json({ error: "Server error" });
+      return res
+        .status(500)
+        .json({ message: `Submission failed: ${e.message}` });
     }
   }
 
-  // 4) Method not allowed
-  res.setHeader("Allow", ["GET","POST","OPTIONS"]);
-  return res.status(405).json({ error: "Method not allowed" });
+  // === Other methods ===
+  res.setHeader("Allow", ["GET", "POST", "OPTIONS"]);
+  return res.status(405).json({ message: "Method not allowed" });
 }

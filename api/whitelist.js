@@ -4,28 +4,28 @@ import crypto from 'crypto'
 
 export default async function handler(req, res) {
   const SHEET_URL   = process.env.SHEET_URL!
-  const HMAC_SECRET = process.env.HMAC_SECRET!    // your HMAC secret
+  const HMAC_SECRET = process.env.HMAC_SECRET!
 
   //
-  // 1) CORS headers for *every* response
+  // ── 1) CORS ──────────────────────────────────────────────────────────────
   //
+  // Always send these three headers on every response
+  res.setHeader('Access-Control-Allow-Origin', '*')               // or your exact domain
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Timestamp, X-Signature')
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, X-Timestamp, X-Signature'
+  )
 
-  //
-  // 2) Preflight
-  //
+  // Preflight
   if (req.method === 'OPTIONS') {
-    // allow any origin to check what’s allowed
-    res.setHeader('Access-Control-Allow-Origin', '*')
     return res.status(200).end()
   }
 
   //
-  // 3) GET — proxy your sheet data (open to any origin)
+  // ── 2) GET ───────────────────────────────────────────────────────────────
   //
   if (req.method === 'GET') {
-    res.setHeader('Access-Control-Allow-Origin', '*')
     try {
       const sheetRes = await fetch(SHEET_URL)
       const data     = await sheetRes.json()
@@ -37,23 +37,27 @@ export default async function handler(req, res) {
   }
 
   //
-  // 4) POST — require your frontend origin + optional HMAC & rate-limit
+  // ── 3) POST ──────────────────────────────────────────────────────────────
   //
   if (req.method === 'POST') {
-    // only allow your production frontend
+    // If you want to restrict POST to your front-end only:
     res.setHeader('Access-Control-Allow-Origin', 'https://www.noctavia.xyz')
 
-    // ── 4.a) Optional: rate-limit by IP ──
-    //   e.g. if (isRateLimited(req.ip)) return res.status(429).json({ message: 'Too many requests' })
+    // 3.a) Rate-limit by IP (if desired)
+    // if (isRateLimited(req.socket.remoteAddress)) {
+    //   return res.status(429).json({ message: 'Too many requests' })
+    // }
 
-    // ── 4.b) HMAC signature check ──
+    // 3.b) HMAC signature check
     const timestamp = req.headers['x-timestamp'] as string
     const signature = req.headers['x-signature'] as string
     if (!timestamp || !signature) {
-      return res.status(400).json({ message: 'Missing X-Timestamp or X-Signature header' })
+      return res
+        .status(400)
+        .json({ message: 'Missing X-Timestamp or X-Signature header' })
     }
-    // optional: reject if timestamp is too old/future
-    const payload = req.body
+
+    const payload  = req.body
     const expected = crypto
       .createHmac('sha256', HMAC_SECRET)
       .update(timestamp + JSON.stringify(payload))
@@ -63,7 +67,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ message: 'Invalid signature' })
     }
 
-    // ── 4.c) Forward to your sheet service ──
+    // 3.c) Forward to Sheets
     try {
       const sheetRes = await fetch(SHEET_URL, {
         method: 'POST',
@@ -78,9 +82,9 @@ export default async function handler(req, res) {
           .json({ message: result.message || 'Sheet error' })
       }
 
-      return res.status(200).json({
-        message: result.message || 'Submitted successfully!',
-      })
+      return res
+        .status(200)
+        .json({ message: result.message || 'Submitted successfully!' })
     } catch (err) {
       console.error('Whitelist POST error:', err)
       return res.status(500).json({ message: 'Submission failed' })
@@ -88,8 +92,8 @@ export default async function handler(req, res) {
   }
 
   //
-  // 5) Any other method → 405
+  // ── 4) FALLTHROUGH ────────────────────────────────────────────────────────
   //
   res.setHeader('Allow', ['GET', 'POST', 'OPTIONS'])
-  return res.status(405).json({ message: 'Method not allowed' })
+  return res.status(405).json({ message: 'Method Not Allowed' })
 }

@@ -1,25 +1,32 @@
-// pages/api/whitelist.js
+// api/whitelist.js
 
 export default async function handler(req, res) {
-  // 1. Always send CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*')           // ← OR a specific origin like 'https://www.noctavia.xyz'
+  const { SHEET_URL, ALLOWED_ORIGIN, WRITE_TOKEN } = process.env
+
+  // CORS and method checks… (unchanged)
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-  // 2. Handle the preflight OPTIONS request
-  if (req.method === 'OPTIONS') {
-    res.status(200).end()
-    return
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, x-write-token'
+  )
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (!['GET','POST'].includes(req.method)) {
+    res.setHeader('Allow','GET,POST')
+    return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // 3. Your existing logic
-  const SHEET_URL = process.env.SHEET_URL
-  const options = {
-    method: req.method,
-    headers: { 'Content-Type': 'application/json' },
-    ...(req.method === 'POST' && { body: JSON.stringify(req.body) }),
+  // Require the write-token on *all* requests (so nobody can even peek at count)
+  const token = req.headers['x-write-token']
+  if (token !== WRITE_TOKEN) {
+    return res.status(401).json({ error: 'Missing or invalid token' })
   }
-  const sheetRes = await fetch(SHEET_URL, options)
-  const data     = await sheetRes.json()
-  res.json(data)
+
+  // Fetch the sheet…
+  const sheetRes = await fetch(SHEET_URL, { method: 'GET' })
+  const rows     = await sheetRes.json()
+
+  // *** HERE’S THE IMPORTANT PART ***
+  // Send *only* the length—never the rows themselves
+  return res.status(200).json({ count: Array.isArray(rows) ? rows.length : 0 })
 }

@@ -1,38 +1,28 @@
 // api/whitelist.js
 
-import Cors from 'micro-cors'
-
-// 1. Configure CORS to only allow your site
-const cors = Cors({
-  origin: 'https://www.noctavia.xyz',    // ← exactly your frontend URL, no slash at end
-  allowMethods: ['GET','POST','OPTIONS'], 
-  allowHeaders: ['Content-Type','x-write-token'],
-})
-
-// 2. Your actual handler, wrapped by cors()
-const handler = async (req, res) => {
-  // Preflight / OPTIONS will be handled by micro-cors automatically
-
-  // 3. Block any method except GET/POST
-  if (!['GET','POST'].includes(req.method)) {
+export default async function handler(req, res) {
+  // 1) Method guard
+  if (!['GET','POST','OPTIONS'].includes(req.method)) {
     res.setHeader('Allow','GET,POST')
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // 4. Require your secret on EVERY request
-  const token = req.headers['x-write-token']
-  if (token !== process.env.WRITE_TOKEN) {
-    return res.status(401).json({ error: 'Missing or invalid token' })
+  // 2) Token guard on GET/POST (skip OPTIONS entirely)
+  if (req.method !== 'OPTIONS') {
+    const token = req.headers['x-write-token']
+    if (token !== process.env.WRITE_TOKEN) {
+      return res.status(401).json({ error: 'Missing or invalid token' })
+    }
   }
 
-  // 5. Fetch only the sheet count
+  // 3) If it's just OPTIONS, we don't need to do anything else
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
+  }
+
+  // 4) Fetch the sheet and return only the count
   const sheetRes = await fetch(process.env.SHEET_URL)
   const rows     = await sheetRes.json()
   const count    = Array.isArray(rows) ? rows.length : 0
-
-  // 6. Return just the number
   return res.status(200).json({ count })
 }
-
-// 7. Export the wrapped handler
-export default cors(handler)

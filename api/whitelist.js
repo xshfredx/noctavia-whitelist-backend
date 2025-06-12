@@ -1,7 +1,32 @@
 // api/whitelist.js
 
 export default async function handler(req, res) {
-  const { SHEET_URL, ALLOWED_ORIGIN, WRITE_TOKEN } = process.env
+  // ─── CORS ALLOW ALL ────────────────────────
+  // (temporary, so you can confirm your endpoint is working)
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-write-token')
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
+  }
+  // ───────────────────────────────────────────
+
+  // …then your existing method+token checks, fetch, etc.
+  const { SHEET_URL, WRITE_TOKEN } = process.env
+  if (!['GET','POST'].includes(req.method)) {
+    res.setHeader('Allow','GET,POST')
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+  const token = req.headers['x-write-token']
+  if (token !== WRITE_TOKEN) {
+    return res.status(401).json({ error: 'Missing or invalid token' })
+  }
+  const sheetRes = await fetch(SHEET_URL, { method: 'GET' })
+  const rows     = await sheetRes.json()
+  const count    = Array.isArray(rows) ? rows.length : 0
+  return res.status(200).json({ count })
+}
+
 
   // 1) Grab the browser's Origin header:
   const origin = req.headers.origin

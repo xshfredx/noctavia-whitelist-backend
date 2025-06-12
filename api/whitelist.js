@@ -1,70 +1,38 @@
 // api/whitelist.js
 
-export default async function handler(req, res) {
-  // ─── CORS ALLOW ALL ────────────────────────
-  // (temporary, so you can confirm your endpoint is working)
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-write-token')
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
-  }
-  // ───────────────────────────────────────────
+import Cors from 'micro-cors'
 
-  // …then your existing method+token checks, fetch, etc.
-  const { SHEET_URL, WRITE_TOKEN } = process.env
-  if (!['GET','POST'].includes(req.method)) {
-    res.setHeader('Allow','GET,POST')
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
-  const token = req.headers['x-write-token']
-  if (token !== WRITE_TOKEN) {
-    return res.status(401).json({ error: 'Missing or invalid token' })
-  }
-  const sheetRes = await fetch(SHEET_URL, { method: 'GET' })
-  const rows     = await sheetRes.json()
-  const count    = Array.isArray(rows) ? rows.length : 0
-  return res.status(200).json({ count })
-}
+// 1. Configure CORS to only allow your site
+const cors = Cors({
+  origin: 'https://www.noctavia.xyz',    // ← exactly your frontend URL, no slash at end
+  allowMethods: ['GET','POST','OPTIONS'], 
+  allowHeaders: ['Content-Type','x-write-token'],
+})
 
+// 2. Your actual handler, wrapped by cors()
+const handler = async (req, res) => {
+  // Preflight / OPTIONS will be handled by micro-cors automatically
 
-  // 1) Grab the browser's Origin header:
-  const origin = req.headers.origin
-
-  // 2) If it exactly matches the one you trust, echo it back.
-  //    Otherwise we simply won’t set CORS headers and requests will fail.
-  if (origin && origin === ALLOWED_ORIGIN) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-  }
-
-  // 3) Rest of your CORS & method boilerplate:
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, x-write-token'
-  )
-
-  // 4) Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
-  }
-
-  // 5) Only allow GET/POST
+  // 3. Block any method except GET/POST
   if (!['GET','POST'].includes(req.method)) {
     res.setHeader('Allow','GET,POST')
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // 6) Require token on all requests
+  // 4. Require your secret on EVERY request
   const token = req.headers['x-write-token']
-  if (token !== WRITE_TOKEN) {
+  if (token !== process.env.WRITE_TOKEN) {
     return res.status(401).json({ error: 'Missing or invalid token' })
   }
 
-  // 7) Fetch the sheet and return only the count
-  const sheetRes = await fetch(SHEET_URL, { method: 'GET' })
+  // 5. Fetch only the sheet count
+  const sheetRes = await fetch(process.env.SHEET_URL)
   const rows     = await sheetRes.json()
   const count    = Array.isArray(rows) ? rows.length : 0
 
+  // 6. Return just the number
   return res.status(200).json({ count })
 }
+
+// 7. Export the wrapped handler
+export default cors(handler)
